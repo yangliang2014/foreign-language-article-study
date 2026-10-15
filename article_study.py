@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-article_study.py — 英文文章抓取 + 逐句精读上下排版注入（一体化工具）
+article_study.py — 外文文章抓取 + 逐句精读上下排版注入（一体化工具，支持英语/日语）
 
 子命令:
   prep       <url> -d dir [--normalize]              一条龙：抓取 + 骨架 + 实体体检 + draft 模板
@@ -38,6 +38,233 @@ from html.parser import HTMLParser
 UA = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input",
         "link", "meta", "param", "source", "track", "wbr"}
+
+# ---------- 语言档案：断句 / TTS / 字体 / 取文清洗 均按此分派 ----------
+# splitter: latin=. ! ? +空白+大写（缩写表拦截）；latin-nocase=同 latin 但无大写检查（ko）；
+#           ja=。！？即断；rtl=阿语句末（. ! ؟）无大写；thai=按空格分句
+# abbr_extra: 该语言在英文缩写基线 SENT_ABBR 之外的额外缩写词（小写、去尾点）
+_LATIN_FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif'
+LANG_PROFILES = {
+    "en": {
+        "label": "英文",
+        "voice_label": "英语",
+        "bcp47": "en-US",
+        "voice_re": r"en(-|_|$)",
+        "accept_language": "en-US,en;q=0.9",
+        "body_font": _LATIN_FONT,
+        "reader_font": None,  # 精读模式沿用 --mono 等宽栈
+        "source_label": "Source: ",
+        "strip_ruby": False,
+        "splitter": "latin",
+        "abbr_extra": frozenset(),
+        "rtl": False,
+    },
+    "ja": {
+        "label": "日文",
+        "voice_label": "日语",
+        "bcp47": "ja-JP",
+        "voice_re": r"ja(-|_|$)",
+        "accept_language": "ja,ja-JP;q=0.9,en;q=0.8",
+        "body_font": ('"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",'
+                      '"Noto Sans JP",-apple-system,"PingFang SC",sans-serif'),
+        "reader_font": ('"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",'
+                        '"Noto Sans JP","PingFang SC",sans-serif'),
+        "source_label": "出典：",
+        "strip_ruby": True,
+        "splitter": "ja",
+        "abbr_extra": frozenset(),
+        "rtl": False,
+    },
+    "ko": {
+        "label": "韩文",
+        "voice_label": "韩语",
+        "bcp47": "ko-KR",
+        "voice_re": r"ko(-|_|$)",
+        "accept_language": "ko-KR,ko;q=0.9,en;q=0.8",
+        "body_font": ('"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",'
+                      '"Hiragino Sans",-apple-system,"PingFang SC",sans-serif'),
+        "reader_font": ('"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",'
+                        '"PingFang SC",sans-serif'),
+        "source_label": "출처: ",
+        "strip_ruby": False,
+        "splitter": "latin-nocase",
+        # 韩文新闻里夹的英文头衔/月份仍需拦截
+        "abbr_extra": frozenset(),
+        "rtl": False,
+    },
+    "fr": {
+        "label": "法文",
+        "voice_label": "法语",
+        "bcp47": "fr-FR",
+        "voice_re": r"fr(-|_|$)",
+        "accept_language": "fr-FR,fr;q=0.9,en;q=0.8",
+        "body_font": _LATIN_FONT,
+        "reader_font": None,
+        "source_label": "Source : ",
+        "strip_ruby": False,
+        "splitter": "latin",
+        "abbr_extra": frozenset({
+            "m", "mme", "mlle", "dr", "pr", "cf", "ex", "p", "vol", "no",
+            "janv", "févr", "avr", "juil", "sept", "oct", "nov", "déc", "etc",
+        }),
+        "rtl": False,
+    },
+    "de": {
+        "label": "德文",
+        "voice_label": "德语",
+        "bcp47": "de-DE",
+        "voice_re": r"de(-|_|$)",
+        "accept_language": "de-DE,de;q=0.9,en;q=0.8",
+        "body_font": _LATIN_FONT,
+        "reader_font": None,
+        "source_label": "Quelle: ",
+        "strip_ruby": False,
+        "splitter": "latin",
+        "abbr_extra": frozenset({
+            "bzw", "ca", "nr", "zzgl", "inkl", "evtl", "ggf", "vgl", "hr", "fr",
+            "z.b", "d.h", "u.a", "u.ä", "o.ä", "i.h.v", "e.v", "a.d",
+            "jan", "feb", "mär", "apr", "jun", "jul", "aug", "sep", "sept",
+            "okt", "nov", "dez",
+        }),
+        "rtl": False,
+    },
+    "es": {
+        "label": "西文",
+        "voice_label": "西班牙语",
+        "bcp47": "es-ES",
+        "voice_re": r"es(-|_|$)",
+        "accept_language": "es-ES,es;q=0.9,en;q=0.8",
+        "body_font": _LATIN_FONT,
+        "reader_font": None,
+        "source_label": "Fuente: ",
+        "strip_ruby": False,
+        "splitter": "latin",
+        "abbr_extra": frozenset({
+            "ud", "vd", "sr", "sra", "srta", "dr", "dra", "prof", "p", "pág",
+            "vol", "no", "nums", "cf", "v.gr", "s", "ss", "ee.uu", "ee", "uu",
+            "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep",
+            "sept", "oct", "nov", "dic",
+        }),
+        "rtl": False,
+    },
+    "ru": {
+        "label": "俄文",
+        "voice_label": "俄语",
+        "bcp47": "ru-RU",
+        "voice_re": r"ru(-|_|$)",
+        "accept_language": "ru-RU,ru;q=0.9,en;q=0.8",
+        "body_font": _LATIN_FONT,
+        "reader_font": None,
+        "source_label": "Источник: ",
+        "strip_ruby": False,
+        "splitter": "latin",
+        "abbr_extra": frozenset({
+            "т", "п", "р", "г", "д", "в", "стр", "см", "напр", "рис", "табл",
+            "яз", "доц", "проф", "канд", "т.е", "т.д", "т.к", "т.п", "и.о",
+        }),
+        "rtl": False,
+    },
+    "it": {
+        "label": "意文",
+        "voice_label": "意大利语",
+        "bcp47": "it-IT",
+        "voice_re": r"it(-|_|$)",
+        "accept_language": "it-IT,it;q=0.9,en;q=0.8",
+        "body_font": _LATIN_FONT,
+        "reader_font": None,
+        "source_label": "Fonte: ",
+        "strip_ruby": False,
+        "splitter": "latin",
+        "abbr_extra": frozenset({
+            "sig", "dott", "prof", "p", "pp", "vol", "no", "ecc", "cfr", "ovv",
+            "on", "avv", "ing", "arch", "geom", "rag", "gen",
+            "feb", "mar", "apr", "lug", "set", "ott", "nov", "dic",
+        }),
+        "rtl": False,
+    },
+    "pt": {
+        "label": "葡文",
+        "voice_label": "葡萄牙语",
+        "bcp47": "pt-BR",
+        "voice_re": r"pt(-|_|$)",
+        "accept_language": "pt-BR,pt;q=0.9,en;q=0.8",
+        "body_font": _LATIN_FONT,
+        "reader_font": None,
+        "source_label": "Fonte: ",
+        "strip_ruby": False,
+        "splitter": "latin",
+        "abbr_extra": frozenset({
+            "sr", "sra", "dr", "dra", "prof", "p", "pág", "vol", "num", "nr",
+            "ex", "jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago",
+            "set", "out", "nov", "dez",
+        }),
+        "rtl": False,
+    },
+    "ar": {
+        "label": "阿文",
+        "voice_label": "阿拉伯语",
+        "bcp47": "ar-SA",
+        "voice_re": r"ar(-|_|$)",
+        "accept_language": "ar,ar-SA;q=0.9,en;q=0.8",
+        "body_font": ('"Geeza Pro","Noto Naskh Arabic","Damascus","Al Bayan",'
+                      '"Arial",sans-serif'),
+        "reader_font": ('"Geeza Pro","Noto Naskh Arabic","Damascus",'
+                        '"Al Bayan",serif'),
+        "source_label": "المصدر: ",
+        "strip_ruby": False,
+        "splitter": "rtl",
+        "abbr_extra": frozenset(),
+        "rtl": True,
+    },
+    "th": {
+        "label": "泰文",
+        "voice_label": "泰语",
+        "bcp47": "th-TH",
+        "voice_re": r"th(-|_|$)",
+        "accept_language": "th-TH,th;q=0.9,en;q=0.8",
+        "body_font": ('"Thonburi","Sukhumvit Set","Noto Sans Thai",'
+                      '-apple-system,sans-serif'),
+        "reader_font": ('"Thonburi","Sukhumvit Set","Noto Sans Thai",sans-serif'),
+        "source_label": "ที่มา: ",
+        "strip_ruby": False,
+        "splitter": "thai",
+        "abbr_extra": frozenset(),
+        "rtl": False,
+    },
+}
+DEFAULT_LANG = "en"
+
+# 文种探测：非拉丁文种优先于 <html lang>（镜像页常错标 lang=en）
+_SCRIPT_RANGES = (
+    ("ja", r"[ぁ-んァ-ヶ]"),
+    ("ko", r"[가-힣ᄀ-ᇿㄱ-ㅎㅏ-ㅣ]"),
+    ("ar", r"[؀-ۿ܀-ݏ]"),
+    ("th", r"[฀-๿]"),
+    ("ru", r"[Ѐ-ӿ]"),
+)
+
+
+def detect_lang(doc):
+    """判断文章语言：先按文种（假名/谚文/阿拉伯/泰文/西里尔，镜像页常把
+    <html lang> 错标成 en），再看 <html lang> 属性，识别不了回退 en。"""
+    head = re.sub(r"<script.*?</script>", " ", doc[:80000], flags=re.S | re.I)
+    head = re.sub(r"<style.*?</style>", " ", head, flags=re.S | re.I)
+    head = re.sub(r"<[^>]+>", " ", head)
+    for lang, pat in _SCRIPT_RANGES:
+        if len(re.findall(pat, head)) >= 20:
+            return lang
+    m = re.search(r"<html[^>]*\blang\s*=\s*[\"']?([a-zA-Z]{2,3})", doc, re.I)
+    if m and m.group(1).lower() in LANG_PROFILES:
+        return m.group(1).lower()
+    return DEFAULT_LANG
+
+
+def strip_ruby(frag):
+    """剥掉日语注音：<ruby>電車<rt>でんしゃ</rt></ruby> → 電車。"""
+    frag = re.sub(r"<rp(?:\s[^>]*)?>.*?</rp>", "", frag, flags=re.S | re.I)
+    frag = re.sub(r"<rt(?:\s[^>]*)?>.*?</rt>", "", frag, flags=re.S | re.I)
+    frag = re.sub(r"</?ruby(?:\s[^>]*)?>", "", frag, flags=re.I)
+    return frag
 
 
 # ---------- 极简 DOM ----------
@@ -99,7 +326,7 @@ def find_all(node, pred, out=None):
 
 
 # ---------- 抓取 ----------
-def _curl_to_file(url, timeout, use_env_proxy, dest):
+def _curl_to_file(url, timeout, use_env_proxy, dest, accept_language=None):
     """用 curl 下载到指定文件，返回 (content_type, final_url)。"""
     env = None if use_env_proxy else {k: v for k, v in os.environ.items()
                                       if not re.match(r"(?i)^(https?_proxy|all_proxy|no_proxy)$", k)}
@@ -108,7 +335,7 @@ def _curl_to_file(url, timeout, use_env_proxy, dest):
         "--max-time", str(timeout),
         "-A", UA,
         "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/*;q=0.8,*/*;q=0.7",
-        "-H", "Accept-Language: en-US,en;q=0.9",
+        "-H", "Accept-Language: " + (accept_language or LANG_PROFILES[DEFAULT_LANG]["accept_language"]),
         "-o", dest,
         "-w", "%{url_effective}\t%{content_type}",
     ]
@@ -124,12 +351,12 @@ def _curl_to_file(url, timeout, use_env_proxy, dest):
     return parts[1].strip(), parts[0].strip() or url
 
 
-def _curl(url, timeout, use_env_proxy):
+def _curl(url, timeout, use_env_proxy, accept_language=None):
     import tempfile
     fd, body_path = tempfile.mkstemp()
     os.close(fd)
     try:
-        ctype, final_url = _curl_to_file(url, timeout, use_env_proxy, body_path)
+        ctype, final_url = _curl_to_file(url, timeout, use_env_proxy, body_path, accept_language)
         with open(body_path, "rb") as f:
             data = f.read()
         return data, ctype, final_url
@@ -137,12 +364,12 @@ def _curl(url, timeout, use_env_proxy):
         os.unlink(body_path)
 
 
-def http_get(url, timeout=25):
+def http_get(url, timeout=25, accept_language=None):
     # 先直连（忽略失效的本地代理），失败再走环境里的代理
     try:
-        return _curl(url, timeout, use_env_proxy=False)
+        return _curl(url, timeout, use_env_proxy=False, accept_language=accept_language)
     except Exception:
-        return _curl(url, timeout, use_env_proxy=True)
+        return _curl(url, timeout, use_env_proxy=True, accept_language=accept_language)
 
 
 def download_to(url, dest, timeout=300):
@@ -794,7 +1021,7 @@ def jsonld_video_urls(root):
 
 # ---------- 输出 ----------
 TEMPLATE = """<!DOCTYPE html>
-<html lang="">
+<html lang="{lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -802,7 +1029,7 @@ TEMPLATE = """<!DOCTYPE html>
 <style>
   :root {{ color-scheme: light dark; }}
   body {{ margin:0; background:#fff; color:#1a1a1a;
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.7; }}
+    font-family:{body_font}; line-height:1.7; }}
   article {{ max-width:720px; margin:0 auto; background:#fff; padding:48px 40px 72px; min-height:100vh; box-sizing:border-box; }}
   h1 {{ font-size:34px; line-height:1.25; margin:0 0 24px; letter-spacing:-.01em; }}
   .meta {{ font-size:14px; color:#666; margin-bottom:28px; }}
@@ -816,7 +1043,9 @@ TEMPLATE = """<!DOCTYPE html>
   p {{ font-size:18px; margin:0 0 20px; }}
   ul,ol {{ font-size:18px; margin:0 0 20px; padding-left:28px; }}
   li {{ margin-bottom:8px; }}
+  article[dir="rtl"] ul, article[dir="rtl"] ol {{ padding-left:0; padding-right:28px; }}
   .source {{ margin-top:40px; padding-top:16px; border-top:1px solid #e0e0de; font-size:13px; color:#888; word-break:break-all; }}
+  article[dir="rtl"] .source {{ direction:ltr; text-align:left; }}
   .source a {{ color:#888; }}
   @media (prefers-color-scheme:dark) {{
     body {{ background:#14141a; color:#e8e8ea; }}
@@ -828,18 +1057,18 @@ TEMPLATE = """<!DOCTYPE html>
 </style>
 </head>
 <body>
-<article>
+<article{dir_attr}>
   <h1>{title}</h1>
   {meta}
   {body}
-  <p class="source">Source: <a href="{url}">{url}</a><br>Saved {saved_at}</p>
+  <p class="source">{source_label}<a href="{url}">{url}</a><br>Saved {saved_at}</p>
 </article>
 </body>
 </html>
 """
 
 
-def render(blocks, title, url, date, media_dir, media_name):
+def render(blocks, title, url, date, media_dir, media_name, lang=DEFAULT_LANG):
     parts, n_img, n_video = [], 0, 0
     for kind, val in blocks:
         if kind == "p":
@@ -885,8 +1114,11 @@ def render(blocks, title, url, date, media_dir, media_name):
                 f'<figure class="video"><video controls preload="metadata"{poster_attr} '
                 f'src="{ihtml.escape(href, quote=True)}"></video>{cap_html}</figure>')
     meta_html = f'<p class="meta">{ihtml.escape(date)}</p>' if date else ""
+    prof = LANG_PROFILES[lang]
     return TEMPLATE.format(
         title=ihtml.escape(title), meta=meta_html, body="\n".join(parts),
+        lang=lang, body_font=prof["body_font"], source_label=prof["source_label"],
+        dir_attr=' dir="rtl"' if prof["rtl"] else "",
         url=ihtml.escape(url, quote=True), saved_at=datetime.now().strftime("%Y-%m-%d %H:%M"))
 
 
@@ -966,8 +1198,10 @@ def extract_page(page_text, final_url):
 
 
 def cmd_fetch(args):
+    lang = getattr(args, "lang", None) or DEFAULT_LANG
+    prof = LANG_PROFILES[lang]
     print(f"抓取: {args.url}", file=sys.stderr)
-    raw, _, final_url = http_get(args.url)
+    raw, _, final_url = http_get(args.url, accept_language=prof["accept_language"])
     page_text = raw.decode("utf-8", "replace")
     root, title, date, blocks = extract_page(page_text, final_url)
 
@@ -1003,7 +1237,7 @@ def cmd_fetch(args):
         out_path = slugify(title) + ".html"
     media_dir = os.path.splitext(os.path.abspath(out_path))[0] + "_media"
     media_name = os.path.basename(media_dir)
-    out_html = render(blocks, title, final_url, date, media_dir, media_name)
+    out_html = render(blocks, title, final_url, date, media_dir, media_name, lang=lang)
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(out_html)
     try:
@@ -1017,7 +1251,7 @@ def cmd_fetch(args):
 # ============================================================
 # 第二部分：逐句精读上下排版注入
 # ============================================================
-ANALYSIS_CSS = """
+_ANALYSIS_CSS_TPL = """
   /* ===== 逐句精读上下排版 · 柔和荧光笔配色（浅色默认，跟随系统自动深色）===== */
   :root {
     --bg:#f4f3ee; --card:#ffffff; --an-bg:#f8f7f2; --fg:#26241d; --fg-dim:#706d62;
@@ -1030,6 +1264,7 @@ ANALYSIS_CSS = """
     --shadow:rgba(28,107,63,.28);
     --mono:"Andale Mono","SF Mono",Menlo,ui-monospace,Consolas,"DejaVu Sans Mono",
       "Courier New","PingFang SC","Microsoft YaHei",monospace;
+    --reader-font:__READER_FONT__;  /* en 用 --mono；日语档案覆盖为ゴシック体栈 */
   }
   @media (prefers-color-scheme:dark) {
     :root {
@@ -1044,9 +1279,9 @@ ANALYSIS_CSS = """
     }
   }
   html, body { background:var(--bg); }
-  body { color:var(--fg); font-family:var(--mono) !important; }
+  body { color:var(--fg); font-family:var(--reader-font) !important; }
   article { max-width:1180px; background:var(--card) !important; color:var(--fg); }
-  article h1, article h2, article h3 { color:var(--fg); font-family:var(--mono);
+  article h1, article h2, article h3 { color:var(--fg); font-family:var(--reader-font);
     letter-spacing:0; }
   article a { color:var(--g-fg); }
   .meta, figcaption, .source, .source a { color:var(--fg-dim) !important; }
@@ -1065,6 +1300,14 @@ ANALYSIS_CSS = """
     background:var(--line2); }
   #anaProg i { display:block; height:100%; width:0; background:var(--accent); }
 
+  /* 工具栏是中文 UI，任何语言下都保持 LTR */
+  .ana-toolbar { direction:ltr; text-align:left; }
+  /* RTL（阿拉伯语）：原文句右对齐、竖线与序号镜像；中文注释块保持 LTR */
+  article[dir="rtl"] .sa-en, article[dir="rtl"] .sa-en-title { text-align:right;
+    border-left:none; border-right:4px solid var(--en-border); padding:13px 50px 13px 16px; }
+  article[dir="rtl"] .sa-en .sn { left:auto; right:12px; }
+  article[dir="rtl"] .sa-en .sa-play { margin-left:0; margin-right:8px; }
+  article[dir="rtl"] .sa-an, article[dir="rtl"] .ana-gloss { direction:ltr; text-align:left; }
   .ana-toolbar { position:sticky; top:0; z-index:40; display:flex; gap:10px; align-items:center;
     margin:0 0 22px; padding:9px 0; flex-wrap:wrap;
     background:var(--bar); backdrop-filter:blur(4px); border-bottom:1px solid var(--line2); }
@@ -1202,16 +1445,16 @@ ANALYSIS_CSS = """
   }
 """
 
-TOOLBAR = ('<div id="anaProg"><i></i></div>'
+_TOOLBAR_TPL = ('<div id="anaProg"><i></i></div>'
            '<div class="ana-toolbar">'
            '<button id="toggleAn" type="button">隐藏分析（只看原文）</button>'
-           '<button id="playAll" type="button" title="从标题开始连续朗读英文全文（再点一次停止）">▶ 播放全文</button>'
-           '<span class="hint">逐句精读：上为英文（黄色＝重点短语/结构），下为 译文 · 语法 · 短语'
+           '<button id="playAll" type="button" title="从标题开始连续朗读__READ_LABEL__全文（再点一次停止）">▶ 播放全文</button>'
+           '<span class="hint">逐句精读：上为__READ_LABEL__（黄色＝重点短语/结构），下为 译文 · 语法 · 短语'
            '　·　<kbd>A</kbd> 切换模式　·　点喇叭朗读整句　·　播放全文连续朗读　·　点句子序号复制原句'
            '　·　只看原文时按住 <kbd>Ctrl</kbd>（Mac 为 <kbd>Cmd</kbd>）点黄色短语，跳到本句分析</span>'
            '<span class="tts-cfg">'
            '<label class="tts-item">语音<select id="anaVoice" title="朗读语音">'
-           '<option value="">自动（英语）</option></select></label>'
+           '<option value="">自动（__VOICE_LABEL__）</option></select></label>'
            '<label class="tts-item">语速<select id="anaRate" title="朗读语速">'
            '<option value="0.7">0.7× 慢</option>'
            '<option value="0.85">0.85×</option>'
@@ -1222,7 +1465,7 @@ TOOLBAR = ('<div id="anaProg"><i></i></div>'
            '</select></label></span></div>')
 TOP_BUTTON = ('<button id="anaTop" type="button" title="回到顶部" aria-label="回到顶部">↑</button>'
               '<div class="ana-toast" id="anaToast"></div>')
-TOGGLE_JS = """<script>(function(){
+_TOGGLE_JS_TPL = """<script>(function(){
   var art = document.querySelector('article'),
       btn = document.getElementById('toggleAn'),
       prog = document.querySelector('#anaProg i'),
@@ -1274,7 +1517,7 @@ TOGGLE_JS = """<script>(function(){
     try { document.execCommand('copy'); showToast('已复制原句'); } catch (e) {}
     document.body.removeChild(ta);
   }
-  /* 句末朗读：Web Speech API；工具栏可选英语语音与语速，按页记忆 */
+  /* 句末朗读：Web Speech API；工具栏可选 __VOICE_LABEL__ 语音与语速，按页记忆 */
   var curPlay = null, curText = '';
   var voiceSel = document.getElementById('anaVoice'),
       rateSel = document.getElementById('anaRate'),
@@ -1294,7 +1537,7 @@ TOGGLE_JS = """<script>(function(){
     var list = window.speechSynthesis.getVoices() || [], out = [], seen = {}, v, i, key;
     for (i = 0; i < list.length; i++) {
       v = list[i];
-      if (/^en(-|_|$)/i.test(v.lang || '')) {
+      if (new RegExp('^__VOICE_RE__','i').test(v.lang || '')) {
         key = v.voiceURI || (v.name + '|' + v.lang);
         if (!seen[key]) { seen[key] = 1; out.push(v); }
       }
@@ -1323,7 +1566,7 @@ TOGGLE_JS = """<script>(function(){
       return null;
     }
     for (i = 0; i < voices.length; i++)
-      if (/^en-US$/i.test(voices[i].lang)) return voices[i];
+      if (new RegExp('^__BCP47__$','i').test(voices[i].lang)) return voices[i];
     return voices[0] || null;
   }
   function stopSpeak() {
@@ -1337,7 +1580,7 @@ TOGGLE_JS = """<script>(function(){
     if (!text) return;
     stopSpeak();
     var u = new SpeechSynthesisUtterance(text);
-    u.lang = 'en-US';
+    u.lang = '__BCP47__';
     u.rate = parseFloat(rateSel && rateSel.value) || 0.95;
     var voice = chosenVoice();
     if (voice) u.voice = voice;
@@ -1392,7 +1635,7 @@ TOGGLE_JS = """<script>(function(){
     var box = el.querySelector('.sa-en');
     if (box && box.offsetParent !== null) box.scrollIntoView({ behavior:'smooth', block:'center' });
     var u = new SpeechSynthesisUtterance(el.getAttribute('data-en') || '');
-    u.lang = 'en-US';
+    u.lang = '__BCP47__';
     u.rate = parseFloat(rateSel && rateSel.value) || 0.95;
     var voice = chosenVoice();
     if (voice) u.voice = voice;
@@ -1476,7 +1719,34 @@ TOGGLE_JS = """<script>(function(){
 })();</script>"""
 
 
+def analysis_css(lang=DEFAULT_LANG):
+    prof = LANG_PROFILES[lang]
+    reader_font = prof["reader_font"] or "var(--mono)"
+    return _ANALYSIS_CSS_TPL.replace("__READER_FONT__", reader_font)
+
+
+def toolbar_html(lang=DEFAULT_LANG):
+    prof = LANG_PROFILES[lang]
+    return (_TOOLBAR_TPL
+            .replace("__READ_LABEL__", prof["label"])
+            .replace("__VOICE_LABEL__", prof["voice_label"]))
+
+
+def toggle_js(lang=DEFAULT_LANG):
+    prof = LANG_PROFILES[lang]
+    return (_TOGGLE_JS_TPL
+            .replace("__VOICE_LABEL__", prof["voice_label"])
+            .replace("__VOICE_RE__", prof["voice_re"])
+            .replace("__BCP47__", prof["bcp47"]))
+
+
+# 零宽字符（泰文页常用 ZWSP 作换行提示，阿语页偶现 ZWNJ/ZWJ）对匹配不可见
+_ZW = "\u200b\u200c\u200d\ufeff"
+
+
 def _norm(s):
+    for ch in _ZW:
+        s = s.replace(ch, "")
     return (s.replace("’", "'").replace("“", '"').replace("”", '"').replace(" ", " "))
 
 
@@ -1506,12 +1776,49 @@ SENT_ABBR = {
     "oct", "nov", "dec",
     "mon", "tue", "wed", "thu", "fri", "sat", "sun",
 }
-_CLOSING_QUOTES = "\"'”’)]"
-_SENT_START = "\"'“‘(["
+_CLOSING_QUOTES = "\"'”’)]»“"  # “ 在此作德语闭引号（„…“）；英文开引号不紧跟句末符，无歧义
+_SENT_START = "\"'“‘([«„¡¿"  # « 法语/俄语开引号，„ 德语开引号，¡¿ 西语倒装叹问号
 
 
-def split_sentences(text):
-    """在 .!? （可后跟闭引号/括号）+ 空白 + 句首字符处断句。
+# 日语断句：句末符后即可断（无需空白/大写）
+_JA_SENT_END = "。．！？!?"
+_JA_SENT_CLOSE = "」』）)｝】｠〉》"
+
+
+def split_sentences_ja(text):
+    """在 。！？!?（可后跟闭引号/括号）处断句；顿号「、」不算句末；省略号不断。"""
+    out, start, i, n = [], 0, 0, len(text)
+    while i < n:
+        if text[i] in _JA_SENT_END:
+            j = i + 1
+            while j < n and text[j] in _JA_SENT_END:
+                j += 1  # 吞掉 ？！ / ！！！ 等连续句末符
+            k = j
+            while k < n and text[k] in _JA_SENT_CLOSE:
+                k += 1
+            if k < n:
+                sent = text[start:k].strip()
+                if sent:
+                    out.append(sent)
+                start = k
+                i = k
+                continue
+        i += 1
+    tail = text[start:].strip()
+    if tail:
+        out.append(tail)
+    return out
+
+
+# 阿语断句：西方句号 . 与问号 ؟ (U+061F)、叹号 !；逗号 ، (U+060C)、分号 ؛ 不断
+_AR_SENT_END = ".!?؟"
+_AR_CLOSING_QUOTES = "\"'”’)]»”“"
+
+
+def split_sentences_latin(text, abbr, check_case=True):
+    """拉丁/西里尔文种通用断句：在 .!? （可后跟闭引号/括号）+ 空白 + 句首字符处断。
+    check_case=True 时句首须大写/数字/开引号（英、法、德、西、俄、意、葡）；
+    check_case=False 时句首任意非空白（韩语无大小写）。
     缩写、小数、人名首字母、省略号处不断；返回 strip 后的句子列表。"""
     out, start, n = [], 0, len(text)
     i = 0
@@ -1532,19 +1839,42 @@ def split_sentences(text):
             if token[:1].isdigit() and k < n and text[k].isdigit():
                 i += 1
                 continue  # 小数
-            if token.lower().rstrip(".") in SENT_ABBR:
+            if token.lower().rstrip(".") in abbr:
                 i += 1
                 continue  # 缩写
-            if re.fullmatch(r"[A-Z]", token) and re.match(r"\s+[\"'“”‘’]?[A-Z]", text[k:k + 4]):
+            if (len(token) == 1 and token.islower()
+                    and re.match(r"\s+[A-ZÀ-Þ]\.", text[k:k + 6])):
                 i += 1
-                continue  # 人名首字母（George W. Bush）
+                continue  # 德语带空格分段缩写（z. B. / d. h. / u. a.）
+            if (check_case and re.fullmatch(r"[A-ZА-ЯЁ]", token)
+                    and re.match(r"\s+[\"'“”‘’»«]?[A-ZА-ЯЁ]", text[k:k + 4])):
+                i += 1
+                continue  # 人名首字母（George W. Bush / Ф. М. Достоевский）
         k = i + 1
         while k < n and text[k] in _CLOSING_QUOTES:
             k += 1
         m = re.match(r"\s+", text[k:]) if k < n else None
         if m:
             after = k + m.end()
-            if after < n and (text[after].isupper() or text[after].isdigit()
+            # 法语/俄语式：句末符与闭书名号之间有空格（« Bonjour. »）
+            if after < n and text[after] in _CLOSING_QUOTES:
+                kq = after + 1
+                while kq < n and text[kq] in _CLOSING_QUOTES:
+                    kq += 1
+                mq = re.match(r"\s+", text[kq:]) if kq < n else None
+                if mq:
+                    afterq = kq + mq.end()
+                    if afterq < n and (not check_case
+                                       or text[afterq].isupper() or text[afterq].isdigit()
+                                       or text[afterq] in _SENT_START):
+                        sent = text[start:kq].strip()
+                        if sent:
+                            out.append(sent)
+                        start = afterq
+                        i = afterq
+                        continue
+            if after < n and (not check_case
+                              or text[after].isupper() or text[after].isdigit()
                               or text[after] in _SENT_START):
                 sent = text[start:k].strip()
                 if sent:
@@ -1559,15 +1889,80 @@ def split_sentences(text):
     return out
 
 
+def split_sentences_rtl(text):
+    """阿拉伯语断句：. ! ؟ + 闭引号 + 空白即断（无大小写、无缩写表）。"""
+    out, start, n = [], 0, len(text)
+    i = 0
+    while i < n:
+        c = text[i]
+        if c not in _AR_SENT_END:
+            i += 1
+            continue
+        if c == "." and text[i:i + 3] == "...":
+            i += 3
+            continue
+        k = i + 1
+        while k < n and text[k] in _AR_CLOSING_QUOTES:
+            k += 1
+        m = re.match(r"\s+", text[k:]) if k < n else None
+        if m:
+            after = k + m.end()
+            if after < n:
+                sent = text[start:k].strip()
+                if sent:
+                    out.append(sent)
+                start = after
+                i = after
+                continue
+        i += 1
+    tail = text[start:].strip()
+    if tail:
+        out.append(tail)
+    return out
+
+
+def split_sentences_thai(text):
+    """泰语断句：泰文不用句末标点，句子之间以空格分隔（空格也兼作逗号/分句，
+    过度切分由 draft 合句规则修正）。按连续空白切分。"""
+    return [s.strip() for s in re.split(r"\s+", text) if s.strip()]
+
+
+def split_sentences_en(text):
+    return split_sentences_latin(text, SENT_ABBR, check_case=True)
+
+
+def split_sentences(text, lang=DEFAULT_LANG):
+    """按语言档案的 splitter 字段分派断句；返回 strip 后的句子列表。"""
+    prof = LANG_PROFILES[lang]
+    kind = prof["splitter"]
+    if kind == "ja":
+        return split_sentences_ja(text)
+    if kind == "thai":
+        return split_sentences_thai(text)
+    if kind == "rtl":
+        return split_sentences_rtl(text)
+    abbr = SENT_ABBR | prof["abbr_extra"]
+    return split_sentences_latin(text, abbr, check_case=(kind != "latin-nocase"))
+
+
 def body_paragraphs(doc):
-    """返回 article 内正文 <p> 的 (start, end, raw_inner, whole_tag)，跳过 meta/source。"""
-    art0 = doc.index("<article>")
+    """返回 article 内正文 <p> 的 (start, end, raw_inner, whole_tag)，跳过 meta/source。
+
+    日语档案下剥掉 <ruby>/<rt> 注音，只留汉字基底（skeleton 与 inject 同源调用，保证一致）；
+    区间仍指向源标签，inject 整段替换，故无需改写源 HTML。"""
+    art = re.search(r"<article(?:\s[^>]*)?>", doc)
+    if not art:
+        raise ValueError("HTML 中找不到 <article> 容器")
+    art0 = art.start()
+    prof = LANG_PROFILES[detect_lang(doc)]
     out = []
     for m in re.finditer(r"<p(?:\s[^>]*)?>.*?</p>", doc[art0:], re.S):
         tag = m.group(0)
         if 'class="meta"' in tag or 'class="source"' in tag:
             continue
         inner = re.match(r"<p[^>]*>(.*)</p>", tag, re.S).group(1)
+        if prof["strip_ruby"]:
+            inner = strip_ruby(inner)
         out.append((m.start() + art0, m.end() + art0, inner, tag))
     return out
 
@@ -1582,7 +1977,7 @@ def render_en(raw, span, hls):
     # 建立 段落无空白字符序列 -> raw 位置 的映射
     flat = []
     for i, ch in enumerate(raw):
-        if not ch.isspace():
+        if not ch.isspace() and ch not in _ZW:
             flat.append((len(flat), i, _norm(ch)))
     base_lo = next(k for k, (f, i, c) in enumerate(flat) if i == a)
     base_hi = next(k for k in reversed(range(len(flat))) if flat[k][1] == b)
@@ -1726,10 +2121,25 @@ def validate_analysis(paras, groups):
         raise ValueError(head + "\n  - " + "\n  - ".join(errors))
 
 
+# 文末出处标签：从各语言 profile 的 source_label 去空白/冒号后构造（冒号统一可选）
+SOURCE_LABEL_RE = "(?:" + "|".join(
+    re.escape(re.sub(r"[\s:：]+$", "", p["source_label"])) + r"\s*[:：]?"
+    for p in LANG_PROFILES.values()) + ")"
+
+
+def extract_source_url(doc):
+    m = re.search(r'<p class="source">\s*' + SOURCE_LABEL_RE + r'\s*<a href="([^"]+)"', doc)
+    return ihtml.unescape(m.group(1)) if m else ""
+
+
 def inject_analysis(doc, data):
+    lang = detect_lang(doc)
+    prof = LANG_PROFILES[lang]
+    if prof["rtl"] and not re.search(r"<article[^>]*\bdir\s*=", doc, re.I):
+        doc = re.sub(r"(<article(?:\s[^>]*)?)>", r'\1 dir="rtl">', doc, count=1, flags=re.I)
     if "</style>" not in doc:
         raise ValueError("HTML 中没有 <style> 块，无法注入样式")
-    doc = doc.replace("</style>", ANALYSIS_CSS + "\n</style>", 1)
+    doc = doc.replace("</style>", analysis_css(lang) + "\n</style>", 1)
     paras = body_paragraphs(doc)
     groups = data.get("paragraphs", [])
     validate_analysis(paras, groups)
@@ -1737,7 +2147,8 @@ def inject_analysis(doc, data):
     replacements, counter = [], 0
     for pi, ((st, en, raw, _), sentences) in enumerate(zip(paras, groups), 1):
         flat_par = _nosp(raw)
-        flat_items = [(i, _norm(ch)) for i, ch in enumerate(raw) if not ch.isspace()]
+        flat_items = [(i, _norm(ch)) for i, ch in enumerate(raw)
+                      if not ch.isspace() and ch not in _ZW]
         blocks, ptr = [], 0
         for s in sentences:
             f = _nosp(s["en"])
@@ -1760,8 +2171,7 @@ def inject_analysis(doc, data):
         out = out[:st] + new + out[en:]
     if "</h1>" not in out:
         raise ValueError("HTML 中没有 <h1>，无法放置工具栏")
-    src_m = re.search(r'<p class="source">Source: <a href="([^"]+)"', out)
-    src_url = ihtml.unescape(src_m.group(1)) if src_m else ""
+    src_url = extract_source_url(out)
     has_title = bool(data.get("title"))
     if has_title:
         out = out.replace("<h1>", '<h1 class="ana-dup">', 1)  # 分析模式隐藏，避免与标题分析块重复
@@ -1772,7 +2182,7 @@ def inject_analysis(doc, data):
     meta_html = meta_m.group(0) if meta_m else ""
     if meta_m:
         out = out[:meta_m.start()] + out[meta_m.end():]
-    insert = TOOLBAR + meta_html
+    insert = toolbar_html(lang) + meta_html
     if has_title:
         insert += title_block(data["title"], src_url)
     out = out.replace("</h1>", "</h1>" + insert, 1)
@@ -1782,7 +2192,7 @@ def inject_analysis(doc, data):
             out = out.replace('<p class="source">', gloss + '\n  <p class="source">', 1)
         else:
             out = out.replace("</article>", gloss + "\n</article>", 1)
-    out = out.replace("</article>", TOP_BUTTON + TOGGLE_JS + "\n</article>", 1)
+    out = out.replace("</article>", TOP_BUTTON + toggle_js(lang) + "\n</article>", 1)
     return out, counter
 
 
@@ -1890,11 +2300,12 @@ def normalize_html_entities(html_path):
 
 def skeleton_data(doc):
     paras = require_pristine_paragraphs(doc)
+    lang = detect_lang(doc)
     h1m = re.search(r"<h1[^>]*>(.*?)</h1>", doc, re.S)
     h1 = ihtml.unescape(re.sub(r"<[^>]+>", "", h1m.group(1)).strip()) if h1m else ""
     groups, fallback = [], 0
     for _, _, raw, _ in paras:
-        sents = split_sentences(raw)
+        sents = split_sentences(raw, lang)
         if "".join(_nosp(s) for s in sents) != _nosp(raw):
             sents, fallback = [raw], fallback + 1  # 断句意外丢字时保守回退整段
         groups.append([{"en": s, "hl": [], "zh": "", "gr": "", "ph": []} for s in sents])
@@ -2155,7 +2566,10 @@ def cmd_shot(args):
     stem = os.path.splitext(os.path.basename(src_html))[0]
     tmp_off = os.path.join(os.path.dirname(src_html), "." + stem + ".ana-off.html")
     with open(tmp_off, "w", encoding="utf-8") as f:
-        f.write(doc.replace("<article>", '<article class="ana-off">', 1))
+        off_doc = re.sub(r"<article(?:\s[^>]*)?>",
+                         lambda mm: mm.group(0)[:-1] + ' class="ana-off">',
+                         doc, count=1)
+        f.write(off_doc)
     part_dir = os.path.join(outdir, stem + ".parts")
     os.makedirs(part_dir, exist_ok=True)
     for old in os.listdir(part_dir):
@@ -2212,8 +2626,8 @@ def cmd_open(args):
 
 # ---------- draft DSL：助手只写中文，不照抄 en/JSON 样板 ----------
 DRAFT_HELP = (
-    "// 逐句精读 draft：每个 # 块填 zh/gr 两行；ph 下每条一行 `- 英文短语 | 中文释义`；\n"
-    "// hl 行填 `高亮1 | 高亮2`，留空则自动取 ph 英文列。\n"
+    "// 逐句精读 draft：每个 # 块填 zh/gr 两行；ph 下每条一行 `- 原文短语 | 中文释义`；\n"
+    "// hl 行填 `高亮1 | 高亮2`，留空则自动取 ph 原文列。\n"
     "// > en 是只读原文。拆句：同段内再贴一组 `> en:`+zh/gr/ph/hl；\n"
     "// 合句：把两条 > en 接成一行、注释合并成一组。空行与 // 行被忽略。\n"
     "// 填完运行 fill 写回 analysis.json。\n"
@@ -2403,7 +2817,7 @@ def cmd_verify(args):
     else:
         warns.append("没有词汇表（所有句 ph 均为空？）")
 
-    if re.search(r'<p class="source">\s*Source:\s*<a href="https?://', doc):
+    if re.search(r'<p class="source">\s*' + SOURCE_LABEL_RE + r'\s*<a href="https?://', doc):
         oks.append("文末 source 链接存在")
     else:
         fails.append("找不到文末 source 链接")
@@ -2453,6 +2867,8 @@ def main():
     p_fetch.add_argument("url")
     p_fetch.add_argument("-o", "--output", help="输出文件路径（与 -d 二选一）")
     p_fetch.add_argument("-d", "--dir", help="按文章标题建子目录：<dir>/<标题slug>/<标题slug>.html")
+    p_fetch.add_argument("--lang", choices=sorted(LANG_PROFILES), default=DEFAULT_LANG,
+                         help="文章语言（影响抓取语言头/断句/字体/朗读），默认 en")
     p_fetch.set_defaults(func=cmd_fetch)
 
     p_par = sub.add_parser("paragraphs", help="打印 HTML 正文段落（JSON）")
@@ -2464,6 +2880,8 @@ def main():
     p_prep.add_argument("-o", "--output", help="HTML 输出路径（与 -d 二选一）")
     p_prep.add_argument("-d", "--dir", help="按文章标题建子目录：<dir>/<标题slug>/")
     p_prep.add_argument("--normalize", action="store_true", help="正文遇到 HTML 实体先就地解码")
+    p_prep.add_argument("--lang", choices=sorted(LANG_PROFILES), default=DEFAULT_LANG,
+                         help="文章语言（影响抓取语言头/断句/字体/朗读），默认 en")
     p_prep.set_defaults(func=cmd_prep)
 
     p_skel = sub.add_parser("skeleton", help="生成分析 JSON 骨架（自动按句拆分，附实体体检）")

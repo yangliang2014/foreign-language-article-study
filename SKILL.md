@@ -1,11 +1,29 @@
 ---
 name: article-study
-description: 英文文章“逐句精读”：用户给出文章 URL 要求精读、逐句翻译分析，或给出已抓取的 HTML 要求加逐句双语对照注释时使用。产出离线 HTML，上为英文原句、下为 译文/语法/短语 对照与重点高亮，可一键切换“只看原文”。
+description: 外语文章“逐句精读”（英语/日语/韩语/法语/德语/西班牙语/俄语/意大利语/葡萄牙语/阿拉伯语/泰语）：用户给出文章 URL 要求精读、逐句翻译分析，或给出已抓取的 HTML 要求加逐句双语对照注释时使用。产出离线 HTML，上为外文原句、下为 译文/语法/短语 对照与重点高亮，可一键切换“只看原文”。
 ---
 
 # article-study 文章逐句精读
 
-仅处理英文文章。把一篇英文文章变成离线 HTML：上下逐句对照（上英文、下 译文/语法/短语），重点高亮，带「只看原文」切换。
+把一篇外语文章变成离线 HTML：上下逐句对照（上原文、下 译文/语法/短语），重点高亮，带「只看原文」切换。注释语言始终是中文。
+
+**非英语文章先读对应 playbook**（信源、断句坑、语法术语包、ph 正反例都在里面）。共 11 个语种（英语 + 中国学生热门前 10 外语）：
+
+| 语码 | 语言 | playbook | 断句特点 |
+|---|---|---|---|
+| en | 英语 | —（本文件即说明） | `. ! ?`+大写 |
+| ja | 日语 | [`languages/ja.md`](languages/ja.md) | `。！？` 即断、自动剥注音 |
+| ko | 韩语 | [`languages/ko.md`](languages/ko.md) | `. ! ?` 断、无大小写 |
+| fr | 法语 | [`languages/fr.md`](languages/fr.md) | 拉丁断句、`« »`、问号前空格 |
+| de | 德语 | [`languages/de.md`](languages/de.md) | 拉丁断句、`z. B.` 式缩写、可分动词 |
+| es | 西班牙语 | [`languages/es.md`](languages/es.md) | 拉丁断句、`¿ ¡` 倒装标点 |
+| ru | 俄语 | [`languages/ru.md`](languages/ru.md) | 拉丁断句、西里尔大写与首字母 |
+| it | 意大利语 | [`languages/it.md`](languages/it.md) | 拉丁断句、dott.ssa 式头衔 |
+| pt | 葡萄牙语 | [`languages/pt.md`](languages/pt.md) | 拉丁断句、人称不定式 |
+| ar | 阿拉伯语 | [`languages/ar.md`](languages/ar.md) | RTL、`. ! ؟`、阿语逗号不断 |
+| th | 泰语 | [`languages/th.md`](languages/th.md) | 按空格切分、需大量合句 |
+
+脚本按 `<html lang>` 与文种自动识别语言（假名/谚文/阿拉伯/泰文/西里尔按字符集探测，优先于错标的 html lang），一般无需指定；`fetch`/`prep` 可显式 `--lang en|ja|ko|fr|de|es|ru|it|pt|ar|th`（影响抓取语言头、断句、字体、朗读语音；阿语成品自动 RTL 排版）。日语站常见的 `<ruby><rt>` 注音会被自动剥除。
 
 > **调用必读**：写 draft 与截图核对前，先过一遍同目录 [`issues.md`](issues.md) 顶部的故障信号。
 
@@ -20,8 +38,9 @@ python3 .claude/skills/article-study/article_study.py <子命令> ...
 ### 1. 取文 + 骨架：URL 用 prep，已有 HTML 用 skeleton
 
 ```bash
-# URL：一条龙产出 HTML、analysis.json 骨架、待填 draft.md
+# URL：一条龙产出 HTML、analysis.json 骨架、待填 draft.md（非英语且自动识别不准时加 --lang <语码>）
 python3 .claude/skills/article-study/article_study.py prep "<URL>" -d article-output
+python3 .claude/skills/article-study/article_study.py prep "<URL>" -d article-output --lang ja
 # 已有 HTML（只取文不分析时仍可用 fetch）：
 python3 .claude/skills/article-study/article_study.py skeleton <file.html> -o analysis.json
 python3 .claude/skills/article-study/article_study.py draft -j analysis.json -o <名>.draft.md
@@ -42,7 +61,9 @@ python3 .claude/skills/article-study/article_study.py paragraphs <file.html>   #
 
 ### 2. 填写 draft.md（助手只写中文，不碰 JSON）
 
-draft 是纯文本，每个 `# 段.句` 块长这样（`> en` 只读，照填下面四行）：
+> 下面规则以英语为例；非英语语言的断句复核、`gr` 语法术语包、`ph` 形态正反例见顶部表中对应 playbook。四字段结构与所有校验规则跨语言相同。
+
+draft 是纯文本，每个 `# 段.句` 块长这样（`> en` 只读，装该语言原文，照填下面四行）：
 
 ```
 # 0.0
