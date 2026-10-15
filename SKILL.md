@@ -57,7 +57,7 @@ python3 .claude/skills/article-study/article_study.py paragraphs <file.html>   #
 
 - **付费墙分支**：全部回退后提取段落数仍为 0 才是硬付费墙——停止并告知用户，无正文可分析。
 - **抓取异常分支**：先跑 `paragraphs <file.html>` 抽查。若正文挤成一个超大 `<p>`、混入 `window.`/广告脚本碎片或图片署名文字，直接编辑该 HTML：按原文逻辑拆成多个 `<p>`、删净非正文文字，使正文只剩文章本身的段落，再进第 2 步。
-- **实体体检分支**：skeleton/prep 会扫描正文 `<p>` 里的 HTML 实体（JSON-LD 源文常带字面 `&#x27;`；浏览器原文模式能解码，但注入时 `en` 经 html-escape 会在精读块里显示成字面文本，check 拦不住）。报警告就加 `--normalize` 重跑（prep 同样支持），脚本就地把源 HTML 正文实体解码成真字符后再生成骨架。**不要手写替换 analysis.json 了事——inject 以源 HTML 为基准重新生成。**
+- **实体体检分支**：skeleton/prep 会扫描正文 `<p>` 里的 HTML 实体（JSON-LD 源文常带字面 `&#x27;`；浏览器原文模式能解码，但注入时 `en` 经 html-escape 会在精读块里显示成字面文本，check 拦不住）。报警告就加 `--normalize` 重跑（prep 同样支持），脚本就地把源 HTML 正文实体解码成真字符后再生成骨架。**不要手写替换 analysis.json 了事——inject 以源 HTML 为基准重新生成。** 注意：`&lt;i&gt;` 这类**标签实体**解码后变成真 `<i>` 元素留在正文，skeleton 会把内联标签按文字保留，成品显示字面 `<i>`（check/verify 都拦不住，截图才看得出）。正文段落只该剩纯文字：解码后如出现 `<i>/<em>` 等包裹标签，直接从源 HTML 删标签留内容，draft 的 `> en:` 行同步，再走 fill/check/inject。
 
 ### 2. 填写 draft.md（助手只写中文，不碰 JSON）
 
@@ -135,6 +135,15 @@ python3 .claude/skills/article-study/article_study.py shot  <file.html>
 ```bash
 python3 .claude/skills/article-study/article_study.py open <file.html>
 ```
+
+### 6. 复盘回写（每次精读结束必做，open 之后）
+
+交付不是终点：对照 [issues.md](issues.md) 顶部故障信号回顾本次精读——
+
+- 遇到**清单没覆盖的新失败模式** → 先把可泛化规则提进本文件对应步骤，再在 issues.md 日志顶部补一行；
+- 已有信号覆盖的失败、脚本自动兜住的回退、一次性站点细节 → **不记**。
+
+不回写，同样的坑下次还会踩（本条即为此教训的固化）。
 
 ## draft.md / analysis.json 契约
 

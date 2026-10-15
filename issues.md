@@ -9,10 +9,12 @@
 - 某句读着是两句话却只有一个编号（典型：`…,” sb said/wrote on X. Surprisingly/And …`）→ skeleton 漏断，在 draft 同一块内加一组 `> en:`。
 - check 连续报「高亮短语在句中找不到」、ph 看着却"没错"（`lay out`、`put ... in perspective`、带 `sb/sth`）→ ph 写了词典原形而非句中逐字片段；规则见 SKILL.md 第 2 步，check 会一次列全所有不命中。
 - check 报「段落中找不到句子」、实体也已归一过 → 骨架 `> en:` 句尾带了正文容器里不存在的字符；定位法见 SKILL.md 第 2 步。
+- 精读块出现字面 **`<i>`/`</i>` 标签文本**（截图核对才可见）→ 源文 JSON-LD 自带实体编码标签，`--normalize` 解码后成真标签被 skeleton 按文字保留；从源 HTML 剥掉包裹标签留纯文本，draft `> en:` 同步重跑，见 SKILL.md 第 1 步实体分支。
 - 想 Read 全页截图核对 → 停，只读 `<名>.parts/` 分片（原因见 SKILL.md 第 4 节）。
 
 ## 日志（最新在前，一行：站点 — 症状 → 现在由什么兜住）
 
+- 2026-10-15 · CTV News《U.S. grand jury indicts James Bryant》— JSON-LD 正文带 `&lt;i&gt;` 标签实体，`--normalize` 解码后 `<i>` 以字面文本渲染进成品，check/verify 均拦不住，截图才暴露 → SKILL.md 第 1 步实体分支补「剥包裹标签」规则。
 - 2026-10-15 · 脚本改进（NatGeo 篇返工耗时）— check 每轮只报第一个 hl，88 条错误要跑很多轮 → `validate_analysis` 渲染前聚合校验，一次列出字段/覆盖/全部 hl 错误。
 - 2026-10-15 · National Geographic《Philbrick 淘金热访谈》— 子代理填的 ph 全是词典原形/`sb/sth` 模式，88 条高亮不命中，check 每次只报一条 → SKILL.md 第 2 步 ph 逐字规则 + 第 3 步 fill 前全量子串审计。
 - 2026-10-15 · 同篇 — check 报第 8 段找不到句子，`--normalize` 后仍失败（断句取 JSON-LD、正文取 DOM，句尾 `.”` 只存于前者）→ SKILL.md 第 2 步拼接 diff 定位、改 draft 的 `> en:`。
