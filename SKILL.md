@@ -210,8 +210,3 @@ hl: fired an answering volley
 
 ---
 
-如果你希望，我可以：
-- 在本分支（improve-skill-doc）提交此重写并创建 PR；
-- 或先把完整重写版本贴在这里供你逐段审阅并提出改动点。
-
-请选择下一步（提交 PR / 逐段审阅）。
