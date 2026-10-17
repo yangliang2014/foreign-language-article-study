@@ -32,6 +32,8 @@ import urllib.parse
 from datetime import datetime
 from html.parser import HTMLParser
 
+__version__ = "1.0.0"
+
 # ============================================================
 # 第一部分：抓取（与 fetch_article.py 行为一致）
 # ============================================================
@@ -3048,6 +3050,7 @@ def cmd_prep(args):
 
 def main():
     ap = argparse.ArgumentParser(description="文章抓取 + 逐句精读上下排版注入")
+    ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p_fetch = sub.add_parser("fetch", help="抓取文章 URL 为单文件 HTML")

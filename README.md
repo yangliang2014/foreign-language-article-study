@@ -68,3 +68,7 @@ hl:
 - 日 / 阿 / 泰字符在截图预览里发虚 → 缩放伪影，只看原生分辨率分片。
 
 完整规则见 [SKILL.md](SKILL.md) · 语言 playbook 见 [`languages/`](languages/) · 故障清单见 [issues.md](issues.md) · 真实范例见 `example-analysis.json`。
+
+## 版本与许可
+
+当前版本 **1.0.0**（`python3 article_study.py --version` 查看）。开源协议 [MIT](LICENSE)。
