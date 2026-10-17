@@ -1024,7 +1024,7 @@ TEMPLATE = """<!DOCTYPE html>
 <html lang="{lang}">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{title}</title>
 <style>
   :root {{ color-scheme: light dark; }}
@@ -1053,7 +1053,7 @@ TEMPLATE = """<!DOCTYPE html>
     .meta,figcaption {{ color:#a0a0a8; }}
     .source {{ border-color:#33333c; color:#777; }} .source a {{ color:#777; }}
   }}
-  @media (max-width:600px) {{ article {{ padding:28px 20px 48px; }} h1 {{ font-size:26px; }} p,ul,ol {{ font-size:17px; }} }}
+  @media (max-width:600px) {{ article {{ padding:calc(28px + env(safe-area-inset-top)) 16px calc(48px + env(safe-area-inset-bottom)); }} h1 {{ font-size:26px; }} p,ul,ol {{ font-size:17px; }} }}
 </style>
 </head>
 <body>
@@ -1285,7 +1285,8 @@ _ANALYSIS_CSS_TPL = """
     letter-spacing:0; }
   article a { color:var(--g-fg); }
   .meta, figcaption, .source, .source a { color:var(--fg-dim) !important; }
-  .source { border-color:var(--line2) !important; }
+  /* 长 URL 只在装不下时断词，正常英文单词不从中间硬断 */
+  .source { border-color:var(--line2) !important; word-break:normal; overflow-wrap:anywhere; }
   /* 分析对比模式隐藏原文配图，只看原文模式再恢复 */
   article figure { display:none; }
   article.ana-off figure { display:block; margin:0 auto 32px; max-width:680px; }
@@ -1313,18 +1314,24 @@ _ANALYSIS_CSS_TPL = """
     background:var(--bar); backdrop-filter:blur(4px); border-bottom:1px solid var(--line2); }
   .ana-toolbar button { font:inherit; font-size:14px; padding:6px 16px; border-radius:4px;
     border:1px solid var(--accent); background:transparent; color:var(--accent); cursor:pointer;
-    letter-spacing:1px; }
+    letter-spacing:1px; min-height:36px; box-sizing:border-box;
+    -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
   .ana-toolbar button:hover { background:var(--accent); color:var(--on-accent); }
   .ana-toolbar button.playing { background:var(--accent); color:var(--on-accent); }
   .ana-toolbar kbd { font-family:var(--mono); font-size:11px; border:1px solid var(--line);
     border-radius:3px; padding:0 5px; color:var(--fg-dim); background:var(--an-bg); }
   .ana-toolbar .hint { font-size:13px; color:var(--fg-dim); }
-  .ana-toolbar .tts-cfg { display:flex; gap:12px; align-items:center; margin-left:auto; }
+  /* 手机端专用提示（桌面隐藏）：只看原文时长按黄色短语可跳回本句 */
+  .ana-toolbar .hint-m { display:none; flex-basis:100%; font-size:12.5px;
+    color:var(--fg-dim); line-height:1.6; }
+  .ana-toolbar .tts-cfg { display:flex; gap:12px; align-items:center; margin-left:auto;
+    min-width:0; flex-shrink:1; }
   .ana-toolbar .tts-item { display:inline-flex; gap:5px; align-items:center;
-    font-size:13px; color:var(--fg-dim); white-space:nowrap; }
+    font-size:13px; color:var(--fg-dim); white-space:nowrap; min-width:0; }
   .ana-toolbar select { font:inherit; font-size:12.5px; color:var(--fg);
     background:var(--card); border:1px solid var(--line); border-radius:4px;
-    padding:4px 6px; max-width:240px; cursor:pointer; }
+    padding:4px 6px; max-width:240px; min-width:0; box-sizing:border-box; cursor:pointer;
+    -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
   .ana-toolbar select:focus { border-color:var(--accent); outline:none; }
   @media (max-width:920px) { .ana-toolbar .tts-cfg { margin-left:0; gap:10px; } }
   .meta { margin:0 0 22px; }
@@ -1343,14 +1350,17 @@ _ANALYSIS_CSS_TPL = """
   .sa.sa-flash { scroll-margin-top:80px; }
   .sa-en .sn { position:absolute; left:12px; top:13px; min-width:22px; text-align:center;
     font-size:12px; font-weight:400; color:var(--p-fg); background:var(--p-bg);
-    border:1px solid transparent; border-radius:4px; padding:1px 6px;
-    cursor:pointer; user-select:none; }
+    border:1px solid transparent; border-radius:4px; padding:1px 6px; box-sizing:border-box;
+    cursor:pointer; user-select:none; -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation; }
   .sa-en .sn:hover { background:var(--accent); color:var(--on-accent); }
   /* 句末朗读按钮 */
   .sa-en .sa-play { display:inline-flex; align-items:center; justify-content:center;
     vertical-align:1px; width:26px; height:23px; margin-left:8px; padding:0;
     border:1px solid var(--en-border); border-radius:4px; background:var(--card);
-    color:var(--p-fg); cursor:pointer; transition:background .12s,color .12s,border-color .12s; }
+    color:var(--p-fg); cursor:pointer; box-sizing:border-box;
+    transition:background .12s,color .12s,border-color .12s;
+    -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
   .sa-en .sa-play svg { width:13px; height:13px; display:block; }
   .sa-en .sa-play:hover, .sa-en .sa-play.playing { background:var(--accent);
     border-color:var(--accent); color:var(--on-accent); }
@@ -1419,11 +1429,40 @@ _ANALYSIS_CSS_TPL = """
   article.ana-off .sa-en .sn { display:none; }
   article.ana-off .sa-en .sa-play { display:none; }
   article.ana-off .sa-en::after { content:" "; }
+  /* 只看原文模式：黄色短语支持长按跳回本句，抑制 iOS 长按弹出系统菜单/放大镜 */
+  article.ana-off .sa-en mark, article.ana-off .sa-en-title mark {
+    -webkit-touch-callout:none; cursor:pointer; }
   @media (max-width:920px) {
     .sa-en { font-size:16px; }
     article.ana-off .sa-en { font-size:17px; }
     article { max-width:720px; }
     .ana-toolbar .hint, .ana-toolbar kbd { display:none; }
+    .ana-toolbar .hint-m { display:block; }
+    /* 语音/语速配置换行后占整行，避免与两个按钮挤在一行互相压缩 */
+    .ana-toolbar .tts-cfg { flex:1 1 100%; justify-content:flex-start; }
+  }
+  @media (max-width:600px) {
+    article { padding:24px 16px calc(56px + env(safe-area-inset-bottom)); }
+    .ana-toolbar { gap:8px; padding-top:calc(8px + env(safe-area-inset-top)); }
+    /* 两个主按钮各占约一半，整行易点；配置项独占下一行 */
+    .ana-toolbar > button { flex:1 1 calc(50% - 4px); padding:8px 10px; min-height:40px; }
+    .ana-toolbar .tts-item { flex:1 1 0; min-width:0; }
+    .ana-toolbar .tts-item > select { flex:1 1 0; max-width:none;
+      min-height:34px; padding:6px 8px; }
+    /* 句内触摸目标放到 ≥32px，序号角标扩大热区 */
+    .sa-en { padding-left:46px; }
+    .sa-en .sn { min-width:28px; padding:3px 8px; top:10px; }
+    .sa-en .sa-play { width:34px; height:32px; }
+    .sa-en .sa-play svg { width:15px; height:15px; }
+    article[dir="rtl"] .sa-en { padding:13px 46px 13px 14px; }
+    article[dir="rtl"] .sa-en .sn { right:10px; }
+    /* 悬浮按钮/提示避开 iPhone 底部 Home 指示条与浏览器工具栏 */
+    #anaTop { right:calc(14px + env(safe-area-inset-right));
+      bottom:calc(18px + env(safe-area-inset-bottom)); }
+    .ana-toast { bottom:calc(26px + env(safe-area-inset-bottom)); width:max-content;
+      max-width:84vw; }
+    .ana-gloss { padding:16px 14px; }
+    .gl-list { grid-template-columns:minmax(0,1fr); }
   }
   /* 打印：白底黑字纯原文（终端配色不用于纸面） */
   @media print {
@@ -1452,6 +1491,7 @@ _TOOLBAR_TPL = ('<div id="anaProg"><i></i></div>'
            '<span class="hint">逐句精读：上为__READ_LABEL__（黄色＝重点短语/结构），下为 译文 · 语法 · 短语'
            '　·　<kbd>A</kbd> 切换模式　·　点喇叭朗读整句　·　播放全文连续朗读　·　点句子序号复制原句'
            '　·　只看原文时按住 <kbd>Ctrl</kbd>（Mac 为 <kbd>Cmd</kbd>）点黄色短语，跳到本句分析</span>'
+           '<span class="hint-m">只看原文：长按黄色短语跳回本句 · 点喇叭朗读单句</span>'
            '<span class="tts-cfg">'
            '<label class="tts-item">语音<select id="anaVoice" title="朗读语音">'
            '<option value="">自动（__VOICE_LABEL__）</option></select></label>'
@@ -1472,9 +1512,10 @@ _TOGGLE_JS_TPL = """<script>(function(){
       topBtn = document.getElementById('anaTop'),
       toast = document.getElementById('anaToast'),
       KEY = 'as:mode:' + location.pathname;
+  if (!art) return;  // 非正常注入页面，直接放弃，避免后续全部报错
   function sync() {
     var off = art.classList.contains('ana-off');
-    btn.textContent = off ? '显示分析' : '隐藏分析（只看原文）';
+    if (btn) btn.textContent = off ? '显示分析' : '隐藏分析（只看原文）';
   }
   try { if (localStorage.getItem(KEY) === 'off') art.classList.add('ana-off'); } catch (e) {}
   sync();
@@ -1484,22 +1525,28 @@ _TOGGLE_JS_TPL = """<script>(function(){
     stopSpeak();
     sync();
   }
-  btn.addEventListener('click', toggle);
+  if (btn) btn.addEventListener('click', toggle);
   document.addEventListener('keydown', function (e) {
-    var t = e.target.tagName;
-    if ((e.key === 'a' || e.key === 'A') && t !== 'INPUT' && t !== 'TEXTAREA') toggle();
+    var t = e.target && e.target.tagName;
+    if ((e.key === 'a' || e.key === 'A') && t !== 'INPUT' && t !== 'TEXTAREA'
+        && t !== 'SELECT') toggle();
   });
   function onScroll() {
     var h = document.documentElement;
     var max = h.scrollHeight - h.clientHeight;
-    prog.style.width = (max > 0 ? (h.scrollTop || document.body.scrollTop) / max * 100 : 0) + '%';
-    topBtn.classList.toggle('show', (h.scrollTop || document.body.scrollTop) > 500);
+    var top = h.scrollTop || document.body.scrollTop;
+    if (prog) prog.style.width = (max > 0 ? top / max * 100 : 0) + '%';
+    if (topBtn) topBtn.classList.toggle('show', top > 500);
   }
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
-  topBtn.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+  if (topBtn) topBtn.addEventListener('click', function () {
+    try { window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    catch (e) { window.scrollTo(0, 0); }
+  });
   var toastTimer;
   function showToast(msg) {
+    if (!toast) return;
     toast.textContent = msg; toast.classList.add('show');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 1400);
@@ -1575,6 +1622,32 @@ _TOGGLE_JS_TPL = """<script>(function(){
     if (curPlay) { curPlay.classList.remove('playing'); curPlay = null; }
     curText = '';
   }
+  /* iOS Safari/WKWebView：音频通道必须先在用户手势内解锁，否则首次 speak 静默失败；
+     微信/QQ 内置浏览器可能根本没有 TTS 引擎，speak 会秒结束，用提示引导换系统浏览器 */
+  var ttsWarned = false;
+  function ttsEnvHint() {
+    if (ttsWarned) return;
+    ttsWarned = true;
+    showToast('没有声音？如在微信/QQ 等内置浏览器打开，请点右上角用系统浏览器打开');
+  }
+  function ttsFailed(text, ms, err) {
+    /* 主动 cancel 会带 canceled/interrupted，不算失败；长句 <300ms 结束＝环境没出声 */
+    if (err === 'canceled' || err === 'interrupted') return;
+    if (err || (text && text.length > 12 && ms < 300)) ttsEnvHint();
+  }
+  function warmupTTS() {
+    if (!('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.resume();
+      var u = new SpeechSynthesisUtterance(' ');
+      u.volume = 0;
+      window.speechSynthesis.speak(u);
+    } catch (e) {}
+  }
+  window.addEventListener('touchstart', function warmOnce() {
+    warmupTTS();
+    window.removeEventListener('touchstart', warmOnce);
+  }, { passive: true });
   function speakText(btn, text) {
     if (!('speechSynthesis' in window)) { showToast('当前浏览器不支持语音朗读'); return; }
     if (!text) return;
@@ -1586,8 +1659,15 @@ _TOGGLE_JS_TPL = """<script>(function(){
     if (voice) u.voice = voice;
     curPlay = btn; curText = text;
     btn.classList.add('playing');
-    u.onend = u.onerror = function () {
+    var startedAt = Date.now();
+    u.onend = function () {
       btn.classList.remove('playing');
+      ttsFailed(text, Date.now() - startedAt, '');
+      if (curPlay === btn) { curPlay = null; curText = ''; }
+    };
+    u.onerror = function (ev) {
+      btn.classList.remove('playing');
+      ttsFailed(text, Date.now() - startedAt, ev && ev.error);
       if (curPlay === btn) { curPlay = null; curText = ''; }
     };
     window.speechSynthesis.speak(u);
@@ -1633,17 +1713,33 @@ _TOGGLE_JS_TPL = """<script>(function(){
     el.classList.add('reading');
     /* ana-off 模式下 .sa 为 display:contents，自身无盒子，须滚动内部 .sa-en */
     var box = el.querySelector('.sa-en');
-    if (box && box.offsetParent !== null) box.scrollIntoView({ behavior:'smooth', block:'center' });
-    var u = new SpeechSynthesisUtterance(el.getAttribute('data-en') || '');
+    if (box && box.offsetParent !== null) {
+      try { box.scrollIntoView({ behavior:'smooth', block:'center' }); }
+      catch (e) { box.scrollIntoView(); }
+    }
+    var sentence = el.getAttribute('data-en') || '';
+    var u = new SpeechSynthesisUtterance(sentence);
     u.lang = '__BCP47__';
     u.rate = parseFloat(rateSel && rateSel.value) || 0.95;
     var voice = chosenVoice();
     if (voice) u.voice = voice;
-    u.onend = u.onerror = function () {
+    var startedAt = Date.now();
+    u.onend = function () {
       if (full.active && token === full.token) {
+        /* 长句 <300ms 就结束：环境没有真正出声，终止全文朗读并提示，避免秒刷全篇 */
+        if (sentence.length > 12 && Date.now() - startedAt < 300) {
+          endFull(); ttsEnvHint(); return;
+        }
         full.i++;
         if (full.i < full.els.length) { full.token++; speakOne(); }
         else endFull();
+      }
+    };
+    u.onerror = function (ev) {
+      /* 自己触发的 cancel/restart 会让 token 失配，走到这里只可能是真失败 */
+      if (full.active && token === full.token &&
+          ev && ev.error !== 'canceled' && ev.error !== 'interrupted') {
+        endFull(); ttsEnvHint();
       }
     };
     window.speechSynthesis.speak(u);
@@ -1691,27 +1787,54 @@ _TOGGLE_JS_TPL = """<script>(function(){
     if (curPlay && curText) speakText(curPlay, curText);
     else restartFullSentence();
   });
+  /* 只看原文 → 回到分析并定位本句：桌面 Ctrl/⌘+点黄色短语，手机长按黄色短语 */
+  function jumpToRow(row) {
+    art.classList.remove('ana-off');
+    try { localStorage.setItem(KEY, 'on'); } catch (err) {}
+    stopSpeak(); sync();
+    if (row) {
+      try { row.scrollIntoView({ block: 'center' }); }
+      catch (e) { row.scrollIntoView(); }
+      row.classList.add('sa-flash');
+      setTimeout(function () { row.classList.remove('sa-flash'); }, 1800);
+    }
+  }
+  /* ---- 长按（触摸端）---- */
+  var lpTimer = null, lpEl = null, lpFired = false, LP_MS = 520;
+  document.addEventListener('touchstart', function (e) {
+    if (!art.classList.contains('ana-off') || e.touches.length !== 1) return;
+    var t = e.target;
+    var mk = t && t.closest ? t.closest('.sa-en mark') : null;
+    if (!mk) return;
+    lpEl = mk; lpFired = false;
+    lpTimer = setTimeout(function () {
+      lpFired = true;
+      try { if (navigator.vibrate) navigator.vibrate(15); } catch (err) {}
+      jumpToRow(lpEl.closest('.sa'));
+    }, LP_MS);
+  }, { passive: true });
+  ['touchend', 'touchmove', 'touchcancel'].forEach(function (ev) {
+    document.addEventListener(ev, function () {
+      if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+    }, { passive: true });
+  });
+  /* 长按触发后浏览器还会补一个 click，捕获阶段拦掉，避免误触复制/朗读 */
+  document.addEventListener('click', function (e) {
+    if (lpFired) { lpFired = false; e.preventDefault(); e.stopPropagation(); }
+  }, true);
   document.addEventListener('click', function (e) {
     /* 只看原文模式：按住 Ctrl/⌘ 点黄色短语，切回分析并定位到本句 */
     if (art.classList.contains('ana-off') && (e.ctrlKey || e.metaKey)) {
       var mk = e.target.closest ? e.target.closest('.sa-en mark') : null;
       if (mk) {
-        var row = mk.closest('.sa');
         e.preventDefault();
-        art.classList.remove('ana-off');
-        try { localStorage.setItem(KEY, 'on'); } catch (err) {}
-        stopSpeak(); sync();
-        if (row) {
-          row.scrollIntoView({ block: 'center' });
-          row.classList.add('sa-flash');
-          setTimeout(function () { row.classList.remove('sa-flash'); }, 1800);
-        }
+        jumpToRow(mk.closest('.sa'));
         return;
       }
     }
     var play = e.target.closest ? e.target.closest('.sa-play') : null;
     if (play) { speakSentence(play); return; }
-    if (e.target.classList.contains('sn')) {
+    if (e.target.classList && e.target.classList.contains('sn')) {
       var row = e.target.closest('.sa');
       if (row && row.getAttribute('data-en')) copyText(row.getAttribute('data-en'));
     }
@@ -2831,11 +2954,75 @@ def cmd_verify(args):
         print(f"  FAIL  {m}")
     try:
         import pathlib
+        uri = pathlib.Path(os.path.abspath(path)).as_uri()
         cdp = CDP()
         try:
-            sid = cdp.open_page(pathlib.Path(os.path.abspath(path)).as_uri())
+            sid = cdp.open_page(uri)
             h = cdp.page_height(sid)
             print(f"  INFO  精读页真实高度 {h}px（shot 已自动取全页；手动截图 -H 须 ≥ 此值）")
+            # 375px 手机视口审计：横向溢出 / 序号徽章盖首字母 / 触摸热区过小
+            msid = cdp.open_page(uri, width=375)
+            audit_js = """
+(function(){
+  var bad={overflow:[],cover:[],tiny:[]}, W=innerWidth;
+  if(document.documentElement.scrollWidth>W+1)
+    bad.overflow.push('scrollWidth='+document.documentElement.scrollWidth+'>'+W);
+  document.querySelectorAll('article *').forEach(function(el){
+    var r=el.getBoundingClientRect();
+    if(r.width>0 && (r.right>W+1 || r.left<-1)){
+      var name=(typeof el.className==='string'&&el.className)||el.id||el.tagName;
+      bad.overflow.push(name.toString().slice(0,24)+' right='+Math.round(r.right));
+    }
+  });
+  var ens=document.querySelectorAll('.pgrp .sa-en'), step=Math.max(1,Math.floor(ens.length/10));
+  var firstCharX=function(en){
+    var walker=document.createTreeWalker(en,NodeFilter.SHOW_TEXT,null);
+    var node;
+    while((node=walker.nextNode())){
+      if(node.nodeValue.trim() && node.parentElement.closest('.sn')===null){
+        var k=node.nodeValue.search(/\S/);
+        var rg=document.createRange();
+        rg.setStart(node,k); rg.setEnd(node,k+1);
+        var rr=rg.getBoundingClientRect();
+        if(rr.width>0) return rr.x;
+      }
+    }
+    return null;
+  };
+  for(var i=0;i<ens.length;i+=step){
+    var en=ens[i], sn=en.querySelector('.sn'); if(!sn) continue;
+    var cx=firstCharX(en), sr=sn.getBoundingClientRect();
+    if(cx!==null && sr.right>cx+1)
+      bad.cover.push('句'+sn.textContent.trim()+' 徽章右缘'+Math.round(sr.right)+'>首字符'+Math.round(cx));
+  }
+  [['#toggleAn',36],['#playAll',36],['.pgrp .sa-en .sa-play',32]].forEach(function(p){
+    var el=document.querySelector(p[0]); if(!el) return;
+    var hh=el.getBoundingClientRect().height;
+    if(hh<p[1]-1) bad.tiny.push(p[0].slice(0,20)+'='+Math.round(hh)+'px');
+  });
+  return JSON.stringify(bad);
+})()
+"""
+            audit = None
+            for _ in range(6):
+                audit = cdp.evaluate(msid, audit_js)
+                if audit:
+                    break
+                _time.sleep(0.4)
+            if audit:
+                a = json.loads(audit)
+                if not a["overflow"] and not a["cover"]:
+                    print("  PASS  375px 手机视口无横向溢出、序号不盖字")
+                if a["overflow"]:
+                    fails.append("overflow")
+                    print("  FAIL  375px 横向溢出（flex 收缩链每层需 min-width:0）: "
+                          + "; ".join(a["overflow"][:6]))
+                if a["cover"]:
+                    fails.append("cover")
+                    print("  FAIL  375px 序号徽章盖住句首文字（.sn 需 box-sizing:border-box 且 "
+                          ".sa-en padding-left 留足）: " + "; ".join(a["cover"][:6]))
+                if a["tiny"]:
+                    print("  WARN  375px 触摸热区偏小: " + "; ".join(a["tiny"]))
         finally:
             cdp.close()
     except Exception as e:

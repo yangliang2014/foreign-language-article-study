@@ -56,6 +56,8 @@ python3 .claude/skills/article-study/article_study.py paragraphs <file.html>   #
 3. **正文三路择优**：DOM 容器 → Arc XP `Fusion.globalContent` → schema.org JSON-LD `articleBody`，按正文字符总量取明显更多者（阈值 +200，并列时保留 DOM）。付费墙站点常在 JSON-LD 里放全文供搜索引擎收录（即使 `isAccessibleForFree:false`）；首块若与 `ImageObject.caption` 相同则识别为题图注，短行（≤6 词）识别为小标题；日期兜底取 `datePublished`。
 
 - **付费墙分支**：全部回退后提取段落数仍为 0 才是硬付费墙——停止并告知用户，无正文可分析。
+- **WAF 拦截分支**：拿到 200 但内容是拦截页（如 «تم رفض الوصول» / "Access Denied" / 安全验证页），正文看似非 0，**自动回退不会触发**；headless Chrome 多半也被拦（CDP/指纹检测），Wayback 可能被代理墙掉。改用受控真浏览器（browseruse 代理）过挑战后提取正文；正文到手后按下面「手工构造 HTML」处理。
+- **手工构造 HTML 分支**：播客单集页等"正文只有简介段"或 WAF 后手工取文的场景，用脚本内 `render([("p", txt)…], title, url, date, None, None, lang=…)` 生成同构 HTML（自带样式/RTL/source 脚注）。两个坑：**必须给 `<h1>`**——没有它 skeleton 的 `title.en` 为空，标题块缺原文（手工写 HTML 时直接加 h1；render 不生成 h1，需手动补）；render 会把 `"` 转义成 `&quot;`，而段落匹配按未解码原文比对，check 会报"找不到句子"——构造后把 `&quot;` 还原为真实引号。
 - **抓取异常分支**：先跑 `paragraphs <file.html>` 抽查。若正文挤成一个超大 `<p>`、混入 `window.`/广告脚本碎片或图片署名文字，直接编辑该 HTML：按原文逻辑拆成多个 `<p>`、删净非正文文字，使正文只剩文章本身的段落，再进第 2 步。
 - **实体体检分支**：skeleton/prep 会扫描正文 `<p>` 里的 HTML 实体（JSON-LD 源文常带字面 `&#x27;`；浏览器原文模式能解码，但注入时 `en` 经 html-escape 会在精读块里显示成字面文本，check 拦不住）。报警告就加 `--normalize` 重跑（prep 同样支持），脚本就地把源 HTML 正文实体解码成真字符后再生成骨架。**不要手写替换 analysis.json 了事——inject 以源 HTML 为基准重新生成。** 注意：`&lt;i&gt;` 这类**标签实体**解码后变成真 `<i>` 元素留在正文，skeleton 会把内联标签按文字保留，成品显示字面 `<i>`（check/verify 都拦不住，截图才看得出）。正文段落只该剩纯文字：解码后如出现 `<i>/<em>` 等包裹标签，直接从源 HTML 删标签留内容，draft 的 `> en:` 行同步，再走 fill/check/inject。
 
@@ -113,7 +115,7 @@ python3 .claude/skills/article-study/article_study.py shot  <file.html>
 # 可选：-d 图片目录 -W 宽（默认1300） -H 高（默认0=CDP 自动测全页） -P 分片高（默认1500）；CHROME 指定浏览器
 ```
 
-`verify` 不依赖肉眼，直接断言注入成品：句块数、无空 zh/gr、无 ph 豆腐块（`en — zh`）、无 `&amp;#…` 双重转义、词汇表条数（`-j` 时对照 JSON 去重短语数）、文末 source 链接存在；并用 CDP 打印真实页高。有 FAIL 就修，不进截图。
+`verify` 不依赖肉眼，直接断言注入成品：句块数、无空 zh/gr、无 ph 豆腐块（`en — zh`）、无 `&amp;#…` 双重转义、词汇表条数（`-j` 时对照 JSON 去重短语数）、文末 source 链接存在；并用 CDP 打印真实页高，**还会在 375px 手机视口实测**：整页无横向溢出（无元素出屏）、序号徽章右缘不超过真实首字符 x（盖字）、主按钮 ≥36px / 喇叭 ≥32px 触摸热区（不足为 WARN）。有 FAIL 就修，不进截图。
 
 `shot` 经 CDP 自动测全页高度、原生模拟深色（不再需要手工替换 media 查询），产出：
 
@@ -127,6 +129,8 @@ python3 .claude/skills/article-study/article_study.py shot  <file.html>
 - 原文模式（`off-*`）：无精读块、只留原文与高亮。
 
 视觉核对同样适合丢给子代理：让它只 Read 指定分片文件并回报异常，别把图片带回主上下文。
+
+**改了注入模板（HTML/CSS/JS 交互、TTS）后**：几何问题 verify 已在 375px 视口自动断言（横向溢出/徽章盖字 FAIL、热区 WARN），但**行为问题测不出**——本地 `python3 -m http.server` 起服用浏览器实测：桌面点一遍切换/全文播放/停止/单句/Ctrl+点击跳句；再用 375px 视口（窄窗或同域 iframe）点一遍手机端按钮、看控制台有无报错（CDP `Runtime.exceptionThrown` 也算）。注入 JS 是单个 IIFE，元素访问必须 null 防御：一处 `null.textContent` 抛错会让页面**所有**按钮同时失效，且静态检查完全看不到。
 
 ### 5. 先问用户，再 open 交付
 
@@ -155,3 +159,4 @@ python3 .claude/skills/article-study/article_study.py open <file.html>
 ## 边界与约定
 
 - 脚本是排版与交互（配色、字号、模式切换、配图/h1 显隐、词汇表、打印、截图）的唯一事实源；交付物是填好的 `draft.md`（经 fill 生成 analysis.json）及第 1 步清洗/归一过的源 HTML。
+- 注入模板的移动端约定（改模板时必须保持）：触摸目标 ≥36px 并加 `touch-action:manipulation` + 禁 tap 高亮；≤920px 工具栏配置区换行、≤600px 两个主按钮各占半行；刘海/底部 Home 条用 `env(safe-area-inset-*)`；**带尺寸约束（min-width/height 或固定宽高）又带 padding 的控件必须 `box-sizing:border-box`**——`.sn` 曾因 content-box 让 28px 最小宽外加 16px padding 实际占 46px，手机端盖住每句首字母，桌面也仅 4px 侥幸不盖；**flex 收缩链的容器和每一层 item 都要 `min-width:0`**——`.tts-cfg` 曾因自身缺它被两个 select 的内在宽度撑到 432px，375px 下横向溢出 65px、语速框被顶出屏幕（改完验 320/375/390 三宽，verify 已自动测）；TTS 三道防线不可删——首次 touchstart 静音预热解锁 iOS 音频、utterance 秒结束（长句 <300ms onend）判为无引擎、toast 引导「微信/QQ 内置浏览器请用系统浏览器打开」；ana-off（只看原文）模式手机没有 Ctrl/点击，跳回本句靠长按黄色短语（520ms + 震动反馈，捕获阶段拦 click 防误触），桌面 Ctrl/Cmd+点击保留。RTL 语种小屏 padding/序号定位要镜像。
