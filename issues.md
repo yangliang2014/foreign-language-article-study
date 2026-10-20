@@ -9,15 +9,29 @@
 - 某句读着是两句话却只有一个编号（典型：`…,” sb said/wrote on X. Surprisingly/And …`）→ skeleton 漏断，在 draft 同一块内加一组 `> en:`。
 - check 连续报「高亮短语在句中找不到」、ph 看着却"没错"（`lay out`、`put ... in perspective`、带 `sb/sth`）→ ph 写了词典原形而非句中逐字片段；规则见 SKILL.md 第 2 步，check 会一次列全所有不命中。
 - check 报「段落中找不到句子」、实体也已归一过 → 骨架 `> en:` 句尾带了正文容器里不存在的字符；定位法见 SKILL.md 第 2 步。
-- 精读块出现字面 **`<i>`/`</i>` 标签文本**（截图核对才可见）→ 源文 JSON-LD 自带实体编码标签，`--normalize` 解码后成真标签被 skeleton 按文字保留；从源 HTML 剥掉包裹标签留纯文本，draft `> en:` 同步重跑，见 SKILL.md 第 1 步实体分支。
+- 精读块出现字面 **`<i>`/`</i>` 标签文本**（截图核对才可见）→ 源文 JSON-LD 自带实体编码标签，`--normalize` 解码后成真标签被 skeleton 按文字保留；从源 HTML 剥掉包裹标签留纯文本，draft `> en:` 同步重跑，见 SKILL.md 第 1 步「实体与非正文段」。
+- prep 实体警告落在**末段站方导流**（`For more … news, visit our … page`，整段为转义链接）→ 非正文，按 SKILL.md 第 1 步「实体与非正文段」删段重跑。
 - 抓到 **200 但内容是 WAF 拦截页**（«تم رفض الوصول» / "Access Denied"，正文非 0）→ 自动回退不触发，headless Chrome 也拦；改受控真浏览器取文，见 SKILL.md 第 1 步 WAF 拦截分支。
+- 真浏览器过了反爬挑战但正文只有零星几段、出现 **"You have X% of this article left … subscribers only"** 计量墙提示 → 硬付费墙（段数非 0，三路探测不触发），按 SKILL.md 第 1 步付费墙分支处理。
+- 手工 render 后成品标题下出现**重复标签栏/发布时间/翻译声明**（截图首片才可见）→ blocks 过滤漏项，标签栏块键是 `list`，按 SKILL.md 第 1 步 JS 挑战分支的块类型清单剔除后重渲染。
 - 手工构造 HTML 后 **skeleton 的 `title.en` 为空**（标题块缺原文）或 **check 报段落找不到句子但实体已归一、`&quot;` 字样在源 HTML 里** → 见 SKILL.md 第 1 步手工构造分支（h1 必需；render 转义需还原）。
+- prep 渲染到标题+配图但**提取段落 0**（成品只有 h1/figure/source），手动 curl Googlebot 同 URL 却能拿到完整页 → WordPress/Newspack 系省略闭合标签，修法见 SKILL.md 第 1 步「渲染取到标题/配图但正文 0 段」。
 - 想 Read 全页截图核对 → 停，只读 `<名>.parts/` 分片（原因见 SKILL.md 第 4 节）。
 - 手机端**所有按钮同时失效**（模式切换、播放全点不动）→ 注入 IIFE 里某处元素访问无 null 防御抛错，静态检查看不到；改模板后必须浏览器实测（SKILL.md 第 4 节）。
 - 手机端 TTS **点了没声音也没提示** → iOS 微信/QQ 内置 WKWebView 无 TTS 引擎或音频通道未解锁；模板已有预热/秒结束检测/toast 引导三道防线，改 JS 时勿删（SKILL.md「边界与约定」移动端约定）。
 - 手机端**句首字母被绿色序号徽章盖住**（如 "1 ettling"）或**整页能横向拖动、某控件被顶出屏外**（375px 工具栏只见语音框、语速框消失）→ 控件盒模型/flex 收缩链问题，规则见 SKILL.md「边界与约定」；verify 的 375px 视口审计直接 FAIL。
 
 ## 日志（最新在前，一行：站点 — 症状 → 现在由什么兜住）
+
+- 2026-10-20 · New England Times 长文《The REZ environmental damage the law allows》（104 段/195 句）— 句数过百后三位数序号徽章比两位宽，375px 审计在句 115 等 5 处抓到徽章盖句首 → 移动端 `.sa-en` padding-left 46→58px、徽章 min-width 28→30px；该审计对成品实际句数运行，超百句页面自动覆盖。
+
+- 2026-10-20 · New England Times《More than 3,000 items ... regional NSW》— headless 渲染提取段落 0（WP 站 `<p class="wp-block-paragraph">` 省略 `</p>` + 段间广告 div），curl 直连完整 → SKILL.md 第 1 步新增「渲染取到标题/配图但正文 0 段」离线切点取段流程。
+
+- 2026-10-17 · Le Monde EN 社论《Mélenchon's alternative budget》— Datadome 挑战（curl bot 页 / headless Client Challenge）+ 手工 render 漏过标签栏 → 有界面真 Chrome + CDP 轮询取文、按块类型清单过滤，见 SKILL.md 第 1 步 JS 挑战分支。
+
+- 2026-10-17 · Le Monde EN《Gen Z's unique humor ...》— curl 200 实为 Datadome bot 页、headless Chrome 得 Client Challenge；有界面真 Chrome 过挑战后撞计量墙（仅 2 段 + "81.52% left / subscribers only"），Google 来源、Wayback/archive.ph 均无全文 → 用户选择换篇；SKILL.md 付费墙判据扩展为「段落 0 或 subscribers-only 计量墙」并给出登录/自存/换篇三选一，issues 加两条信号（bot 200 已有、计量墙新增）。
+
+- 2026-10-17 · CTV News《Man arrested for N.B. homicide ... Dubai》— prep 实体警告命中末段站方导流（转义链接）→ SKILL.md 第 1 步新增「实体与非正文段」分支：导流段删段重跑、正文实体才 normalize；issues 加信号行。
 
 - 2026-10-17 · 脚本改进（CTV 篇 375px 手机端）— 序号徽章 content-box 撑大盖住每句首字母（桌面仅 4px 间隙侥幸没盖）；`.tts-cfg` 收缩链缺 `min-width:0` 横向溢出 65px、语速下拉出屏 → 相关控件 `box-sizing:border-box`、flex 链全层 `min-width:0`、≤600px 两 select 等宽、热区 34px；verify 新增 375px CDP 审计（溢出/盖字 FAIL、热区 WARN），负向样例实测可抓；规则上提 SKILL.md 边界约定。
 - 2026-10-17 · 脚本改进（三语成品手机端故障）— 手机上模式切换/播放全失效：注入 IIFE 无 null 防御，一处抛错全瘫；iOS 微信/QQ 无 TTS 引擎时静默失败；触摸目标 33px、窄屏挤压、只看原文无 Ctrl 键跳句、无安全区适配 → 全元素 null 防御 + TTS 预热/秒结束检测/toast 三道防线 + ≥36px 热区 + 600/920px 断点 + 长按黄色短语跳句 + safe-area-inset；SKILL.md 第 4 节加「改模板必须浏览器实测」、边界约定加移动端清单。

@@ -72,6 +72,15 @@ python3 .claude/skills/article-study/article_study.py shot   <file.html>
 
 边界分支：付费墙、WAF、人工构造 HTML（脚本提供 render 库函数可用于生成手工骨架）
 
+实体与非正文段（prep 报实体警告时，先用 `paragraphs` 看该段内容再决定处理方式）：
+- 末段站方导流（典型 "For more … news, visit our … page"，整段为转义链接）属非正文：从源 HTML 删除该 `<p>`，依次重跑 skeleton 与 draft。
+- 正文段残留实体：重跑 skeleton 加 `--normalize` 解码；解码后出现字面包裹标签（`<i>`/`<b>` 等）则剥掉标签保留纯文本，再重跑。
+
+渲染取到标题/配图但正文 0 段（WordPress/Newspack 系站点常见）：
+- 信号：prep 的 headless 回退打印「提取段落: 0」，成品 HTML 只有 h1/figure/source；但手动 `curl -A Googlebot` 同一 URL 能拿到完整原始页。
+- 原因：正文 `<p class="wp-block-paragraph">` 普遍省略 `</p>`，且段间夹着广告 `<div><broadstreet-zone>`，DOM 解析器取不到干净段落。
+- 修法：离线处理（不触网）——从 curl 保存的原始页定位正文容器（如 `class="entry-content"`），按段首标签 `<p class="wp-block-paragraph">` 切点取段，切到下一个 `<hr`/`<div`/`</p>` 为止；丢弃站方捐赠/订阅引导段（典型 "Like what you're reading? … Donate now"）、广告位与 Related 区块；把纯文本段转义后插进 prep 已生成的成品 HTML（保留其 base64 配图），再跑 skeleton。
+
 2) 编辑 draft.md（人工或子代理）
 - draft.md 是纯文本格式，按“段.句”编号分组，每个句块包含四字段：en（原文，只读），zh（中文译文，必填），gr（语法分析，必填），ph（短语/搭配��可空），hl（高亮，自动或手动）。
 
@@ -159,7 +168,8 @@ hl: fired an answering volley
 1. 抓取为空或被拦截
    - 先用 `paragraphs <file.html>` 检查抓取结果是否包含真实段落。
    - 若遇 WAF 返回“Access Denied”或语言特征异常，尝试手动 headless Chrome 渲染或人工保存页面后使用 `skeleton`。
-   - 付费墙：若三路回退后仍检测不到正文段落（段落数为 0），视为硬付费墙，停止并告知用户。
+   - JS 挑战型反爬（如 Datadome：curl 200 但是 bot 提示页、headless Chrome 停在 "Client Challenge"）：启动有界面真 Chrome（临时 `--user-data-dir` + `--remote-debugging-port`），通过 CDP 轮询真实正文选择器直到段数稳定，取 `outerHTML`；随后调用库函数 `extract_page(dom, url)` 与 `render(blocks, ...)` 手工生成离线 HTML，再走 skeleton。注意 blocks 的键为 `p`/`img`/`h2`/`list`（标签栏是 `list` 不是 `ul`）；社论/文章页通常要剔除：标签栏、发布时间行、翻译声明、与正文首段重复的导语 standfirst。
+   - 付费墙：三路回退后段落数为 0，或真浏览器过了反爬挑战却只渲染零星正文段并出现 `subscribers only` / `X% of this article left` 计量墙提示（剩余内容服务器端不下发，DOM 与内嵌数据均无全文），均视为硬付费墙，停止并让用户三选一：① 启动受控真浏览器由用户登录订阅账号后取文；② 用户自行保存已解锁页面再走 `skeleton`；③ 换文章。
 2. 断句错误（误断或漏断）
    - 在 draft 中手工修断句：多条 `> en:` 连接为一行表示合并；在同段内新增 `# p.s` 来拆句。
    - 对话/报导类插句导致误断：将被插断的语句拼回以覆盖整段，再运行 check。

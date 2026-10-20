@@ -1451,12 +1451,12 @@ _ANALYSIS_CSS_TPL = """
     .ana-toolbar .tts-item { flex:1 1 0; min-width:0; }
     .ana-toolbar .tts-item > select { flex:1 1 0; max-width:none;
       min-height:34px; padding:6px 8px; }
-    /* 句内触摸目标放到 ≥32px，序号角标扩大热区 */
-    .sa-en { padding-left:46px; }
-    .sa-en .sn { min-width:28px; padding:3px 8px; top:10px; }
+    /* 句内触摸目标放到 ≥32px，序号角标扩大热区；三位数序号需更宽角标位 */
+    .sa-en { padding-left:58px; }
+    .sa-en .sn { min-width:30px; padding:3px 6px; top:10px; }
     .sa-en .sa-play { width:34px; height:32px; }
     .sa-en .sa-play svg { width:15px; height:15px; }
-    article[dir="rtl"] .sa-en { padding:13px 46px 13px 14px; }
+    article[dir="rtl"] .sa-en { padding:13px 58px 13px 14px; }
     article[dir="rtl"] .sa-en .sn { right:10px; }
     /* 悬浮按钮/提示避开 iPhone 底部 Home 指示条与浏览器工具栏 */
     #anaTop { right:calc(14px + env(safe-area-inset-right));
